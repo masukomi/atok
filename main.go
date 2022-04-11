@@ -135,7 +135,7 @@ func GetIncidents(url string) (*IncidentsResponse, error) {
 }
 
 func main() {
-	for _, domain := range domains {
+	for domains_idx, domain := range domains {
 		summary_url := domain + SUMMARY_JSON
 		incidents_url := domain + INCIDENT_JSON
 		cmpsCh := make(chan *ComponentsResponse, 1)
@@ -176,6 +176,9 @@ func main() {
 				fmt.Fprintf(writer, "Link:\t%s\n", i.ShortLink)
 				fmt.Fprintf(writer, "Last Updated:\t%s\n", fTime)
 			}
+		}
+		if len(domains) - 1 > domains_idx {
+			fmt.Fprint(writer, "\n\n---------------\n\n")
 		}
 		writer.Flush()
 	}
