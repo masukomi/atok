@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	SUMMARY   = "https://www.githubstatus.com/api/v2/components.json"
-	INCIDENTS = "https://www.githubstatus.com/api/v2/incidents/unresolved.json"
+
+	SUMMARY_JSON  = "/api/v2/components.json"
+	INCIDENT_JSON = "/api/v2/incidents/unresolved.json"
 
 	NONE     = "✅"
 	MINOR    = "🟡"
@@ -21,6 +22,21 @@ const (
 	CRITICAL = "🔴"
 	UNKNOWN  = "❔"
 )
+var domains = []string{
+	"https://jira-software.status.atlassian.com/",
+	"https://jira-work-management.status.atlassian.com/",
+	"https://confluence.status.atlassian.com/",
+	"https://trello.status.atlassian.com/",
+	"https://opsgenie.status.atlassian.com/",
+	"https://access.status.atlassian.com/",
+	"https://support.status.atlassian.com/",
+	"https://status.developer.atlassian.com/",
+	"https://jira-service-management.status.atlassian.com/",
+	"http://jira-product-discovery.status.atlassian.com/",
+	"https://jira-align.status.atlassian.com/",
+	"https://status.bitbucket.org/",
+	"https://metastatuspage.com/",
+}
 
 func toIcon(s string) string {
 	switch s := strings.ToLower(s); s {
@@ -91,8 +107,8 @@ type Update struct {
 	UpdatedAt  string `json:"updated_at"`
 }
 
-func GetComponents() (*ComponentsResponse, error) {
-	resp, err := http.Get(SUMMARY)
+func GetComponents(url string) (*ComponentsResponse, error) {
+	resp, err := http.Get(url)
 	if err != nil {
 		return nil, err
 	}
@@ -104,8 +120,9 @@ func GetComponents() (*ComponentsResponse, error) {
 	return &sr, nil
 }
 
-func GetIncidents() (*IncidentsResponse, error) {
-	resp, err := http.Get(INCIDENTS)
+func GetIncidents(url string) (*IncidentsResponse, error) {
+
+	resp, err := http.Get(url)
 	if err != nil {
 		return nil, err
 	}
@@ -118,44 +135,48 @@ func GetIncidents() (*IncidentsResponse, error) {
 }
 
 func main() {
-	cmpsCh := make(chan *ComponentsResponse, 1)
-	incsCh := make(chan *IncidentsResponse, 1)
-	go func() {
-		cmps, err := GetComponents()
-		if err != nil {
-			log.Fatal(err)
+	for _, domain := range domains {
+		summary_url := domain + SUMMARY_JSON
+		incidents_url := domain + INCIDENT_JSON
+		cmpsCh := make(chan *ComponentsResponse, 1)
+		incsCh := make(chan *IncidentsResponse, 1)
+		go func() {
+			cmps, err := GetComponents(summary_url)
+			if err != nil {
+				log.Fatal(err)
+			}
+			cmpsCh <- cmps
+		}()
+		go func() {
+			incs, err := GetIncidents(incidents_url)
+			if err != nil {
+				log.Fatal(err)
+			}
+			incsCh <- incs
+		}()
+		writer := tabwriter.NewWriter(os.Stdout, 4, 4, 1, ' ', 0)
+		cmps := <-cmpsCh
+		fTime := cmps.Page.UpdatedAt.Format(time.RFC822)
+		fmt.Fprintf(writer, "=== Components as of %s === \n", fTime)
+		for _, c := range cmps.Components {
+			if c.ID == "0l2p9nhqnxpd" {
+				continue
+			}
+			fmt.Fprintf(writer, "%s\t%s\n", c.Name, toIcon(c.Status))
 		}
-		cmpsCh <- cmps
-	}()
-	go func() {
-		incs, err := GetIncidents()
-		if err != nil {
-			log.Fatal(err)
+		incs := <-incsCh
+		if len(incs.Incidents) > 0 {
+			fmt.Fprint(writer, "\n=== Incidents ===")
+			for _, i := range incs.Incidents {
+				fTime := i.UpdatedAt.Format(time.RFC822)
+				fmt.Fprintf(writer, "\nName:\t%s\n", i.Name)
+				fmt.Fprintf(writer, "Impact:\t%s %s\n", toIcon(i.Impact), i.Impact)
+				fmt.Fprintf(writer, "Status:\t%s\n", i.Status)
+				fmt.Fprintf(writer, "Details:\t%s\n", i.Updates[0].Body)
+				fmt.Fprintf(writer, "Link:\t%s\n", i.ShortLink)
+				fmt.Fprintf(writer, "Last Updated:\t%s\n", fTime)
+			}
 		}
-		incsCh <- incs
-	}()
-	writer := tabwriter.NewWriter(os.Stdout, 4, 4, 1, ' ', 0)
-	cmps := <-cmpsCh
-	fTime := cmps.Page.UpdatedAt.Format(time.RFC822)
-	fmt.Fprintf(writer, "=== Components as of %s === \n", fTime)
-	for _, c := range cmps.Components {
-		if c.ID == "0l2p9nhqnxpd" {
-			continue
-		}
-		fmt.Fprintf(writer, "%s\t%s\n", c.Name, toIcon(c.Status))
+		writer.Flush()
 	}
-	incs := <-incsCh
-	if len(incs.Incidents) > 0 {
-		fmt.Fprint(writer, "\n=== Incidents ===")
-		for _, i := range incs.Incidents {
-            fTime := i.UpdatedAt.Format(time.RFC822)
-			fmt.Fprintf(writer, "\nName:\t%s\n", i.Name)
-			fmt.Fprintf(writer, "Impact:\t%s %s\n", toIcon(i.Impact), i.Impact)
-			fmt.Fprintf(writer, "Status:\t%s\n", i.Status)
-			fmt.Fprintf(writer, "Details:\t%s\n", i.Updates[0].Body)
-			fmt.Fprintf(writer, "Link:\t%s\n", i.ShortLink)
-            fmt.Fprintf(writer, "Last Updated:\t%s\n", fTime)
-		}
-	}
-	writer.Flush()
 }
