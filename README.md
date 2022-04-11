@@ -57,3 +57,9 @@ Link:         https://stspg.io/7rs1s2vcpzdq
 Last Updated: 08 Apr 22 14:16 UTC
 ```
 
+
+## Building from source
+
+`go build -o atok main.go`
+
+Then add the newly created `atok` executable to your path.
